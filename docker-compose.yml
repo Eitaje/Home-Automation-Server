@@ -1,0 +1,28 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Use host network if devices are on the LAN and not reachable otherwise.
+    # Uncomment the line below and remove the ports: block if needed on TrueNAS.
+    # network_mode: host
+
+volumes:
+  redis_data:
