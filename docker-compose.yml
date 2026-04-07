@@ -3,7 +3,11 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     volumes:
-      - redis_data:/data
+      # Bind-mount a host directory so data survives container/engine upgrades.
+      # Local dev: a local ./redis-data folder is created automatically.
+      # TrueNAS:   change the left side to your dataset path, e.g.:
+      #            /mnt/pool/homeauto/redis-data:/data
+      - ${REDIS_DATA_PATH:-./redis-data}:/data
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -23,6 +27,3 @@ services:
     # Use host network if devices are on the LAN and not reachable otherwise.
     # Uncomment the line below and remove the ports: block if needed on TrueNAS.
     # network_mode: host
-
-volumes:
-  redis_data:

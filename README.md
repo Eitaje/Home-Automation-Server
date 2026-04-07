@@ -174,83 +174,115 @@ docker compose down -v
 
 ---
 
-## Deployment on TrueNAS SCALE
+## Deployment on TrueNAS SCALE 25.10 (Goldeye)
 
-TrueNAS SCALE supports Docker Compose via SSH. Redis data is persisted in a named volume on your pool.
+The preferred workflow is to build the image locally and push it to TrueNAS's built-in image registry. No code or git cloning needed on the NAS — only the image and a Redis container run there.
 
 ### Prerequisites
 
-- TrueNAS SCALE with SSH enabled
-- A dataset on your pool for the project files (e.g. `/mnt/pool/homeauto`)
+- TrueNAS SCALE 25.10 with SSH enabled
+- Docker Desktop on your dev machine
 - The NodeMCU must be reachable from the TrueNAS host IP
+- A dataset for Redis persistence, e.g. `/mnt/mainpool/homeauto/redis-data`
+  (see the symlink note below regarding pool names with spaces)
 
-### Steps
+### Pool name with spaces
 
-**1. Copy project files to TrueNAS**
+If your pool name contains a space (e.g. `Main Pool`), create a permanent symlink via a Post Init Script in TrueNAS:
 
-From your development machine:
+`System → Advanced → Init/Shutdown Scripts → Add`
+- Type: `Command`
+- Command: `ln -s "/mnt/Main Pool" /mnt/mainpool`
+- When: `Post Init`
+
+Then use `/mnt/mainpool/...` everywhere.
+
+---
+
+The image is hosted on Docker Hub: [`eitaje/homeauto-server-python`](https://hub.docker.com/r/eitaje/homeauto-server-python)
+
+---
+
+### Step 1 — Build and push the image (dev machine)
+
+Run these from the project folder whenever you have code changes:
 
 ```bash
-scp -r "home automation server/" root@<truenas-ip>:/mnt/pool/homeauto
+docker build -t eitaje/homeauto-server-python:latest .
+docker push eitaje/homeauto-server-python:latest
 ```
 
-Or use a Git repository:
+---
+
+### Step 2 — Create the Redis data directory
+
+SSH into TrueNAS and create the directory (or use the TrueNAS Datasets UI):
 
 ```bash
-# On TrueNAS (via SSH)
-git clone <your-repo-url> /mnt/pool/homeauto
+mkdir -p /mnt/mainpool/homeauto/redis-data
 ```
 
-**2. SSH into TrueNAS**
+---
+
+### Step 3 — Copy the compose file to TrueNAS
+
+From your dev machine:
+
+```bash
+scp "docker-compose.truenas.yml" root@<truenas-ip>:/mnt/mainpool/homeauto/
+scp ".env.example" root@<truenas-ip>:/mnt/mainpool/homeauto/.env
+```
+
+---
+
+### Step 4 — Configure and start
+
+SSH into TrueNAS:
 
 ```bash
 ssh root@<truenas-ip>
-cd /mnt/pool/homeauto
-```
+cd /mnt/mainpool/homeauto
 
-**3. Configure**
-
-```bash
-cp .env.example .env
+# Edit .env — set NODEMCU_IP at minimum
 nano .env
-# Set NODEMCU_IP to the NodeMCU's LAN IP
-# Set REDIS_URL=redis://redis:6379
+
+# Start both containers
+docker compose -f docker-compose.truenas.yml up -d
 ```
 
-**4. Build and start**
+Both Redis and the server start together. Redis data is persisted to `/mnt/mainpool/homeauto/redis-data` on your pool.
 
+**Redis persistence:** Two mechanisms are active simultaneously:
+- `appendonlydir/` — AOF (append-only file): logs every write, near-zero data loss on crash
+- `dump.rdb` — RDB snapshot: periodic full dump, extra safety net
+
+On restart, Redis replays the AOF log to restore the full dataset in memory before accepting connections. All historical readings survive container destruction and NAS reboots.
+
+To verify persistence is working:
 ```bash
-docker compose up -d --build
+docker exec redis redis-cli XLEN device:nodemcu:readings  # note the count
+docker compose -f docker-compose.truenas.yml down
+docker compose -f docker-compose.truenas.yml up -d
+docker exec redis redis-cli XLEN device:nodemcu:readings  # should match
 ```
 
-**5. Verify**
-
-```bash
-docker compose ps        # both services should be "running"
-docker compose logs -f   # watch live logs
-```
+> **Network note:** If the NodeMCU is not reachable from inside the container, uncomment `network_mode: host` in `docker-compose.truenas.yml` and change `REDIS_URL` to `redis://localhost:6379`.
 
 The API will be available at `http://<truenas-ip>:8000`.
+API docs: `http://<truenas-ip>:8000/docs`
 
-### Network note
-
-By default Docker uses a bridged network. If the NodeMCU is not reachable from within the container (common on some TrueNAS network configurations), switch to host networking:
-
-In `docker-compose.yml`, under the `server` service:
-- Remove the `ports:` block
-- Uncomment `# network_mode: host`
-
-The server will then use port 8000 on the TrueNAS host IP directly.
-
-### Auto-start on boot
-
-`docker compose` with `restart: unless-stopped` (already set) will automatically restart containers after a TrueNAS reboot, as long as the Docker engine itself starts on boot (it does by default on TrueNAS SCALE).
+---
 
 ### Updating
 
 ```bash
+# Dev machine — rebuild and push
+docker build -t eitaje/homeauto-server-python:latest .
+docker push eitaje/homeauto-server-python:latest
+
+# TrueNAS — pull and restart (Redis is untouched)
 ssh root@<truenas-ip>
-cd /mnt/pool/homeauto
-git pull                        # or re-copy files
-docker compose up -d --build    # rebuilds only if code changed
+cd /mnt/mainpool/homeauto
+docker compose -f docker-compose.truenas.yml pull server
+docker compose -f docker-compose.truenas.yml up -d server
 ```

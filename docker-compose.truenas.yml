@@ -1,0 +1,30 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - /mnt/mainpool/homeauto/redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    image: eitaje/homeauto-server-python:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - NODEMCU_IP=${NODEMCU_IP}
+      - NODEMCU_POLL_INTERVAL=${NODEMCU_POLL_INTERVAL:-10}
+      - NODEMCU_AUTH_USER=${NODEMCU_AUTH_USER:-}
+      - NODEMCU_AUTH_PASSWORD=${NODEMCU_AUTH_PASSWORD:-}
+      - STREAM_MAX_LEN=${STREAM_MAX_LEN:-10000}
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Uncomment if the NodeMCU is not reachable from inside the container:
+    # network_mode: host
