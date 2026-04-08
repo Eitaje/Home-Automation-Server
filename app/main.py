@@ -2,6 +2,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.poller import start_scheduler, stop_scheduler
 from app.redis_client import close_redis
@@ -26,6 +27,13 @@ app = FastAPI(
     description="Polls home automation devices, stores readings in Redis, exposes REST + WebSocket API.",
     version="0.1.0",
     lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(readings.router)

@@ -31,17 +31,18 @@ async def get_latest(device_id: str):
 @router.get("/devices/{device_id}/history")
 async def get_history(
     device_id: str,
-    count: int = Query(default=100, ge=1, le=1000),
+    count: int = Query(default=100, ge=1, le=2000),
     start: str = Query(default="-", description="Redis Stream ID or '-' for oldest"),
     end: str = Query(default="+", description="Redis Stream ID or '+' for newest"),
 ):
     if device_id not in KNOWN_DEVICES:
         raise HTTPException(status_code=404, detail="Device not found")
     r = get_redis()
-    entries = await r.xrange(
-        f"device:{device_id}:readings", min=start, max=end, count=count
+    # XREVRANGE returns newest-first; we reverse so the result is oldest→newest for charts
+    entries = await r.xrevrange(
+        f"device:{device_id}:readings", max=end, min=start, count=count
     )
-    return [{"id": entry_id, **fields} for entry_id, fields in entries]
+    return [{"id": entry_id, **fields} for entry_id, fields in reversed(entries)]
 
 
 @router.get("/devices/{device_id}/sensor_status")
