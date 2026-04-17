@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     stream_max_len: int = 10000
 
-    model_config = {"env_file": ".env"}
+    model_config = {"env_file": ".env", "extra": "ignore"}
 
 
 settings = Settings()

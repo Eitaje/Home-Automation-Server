@@ -77,6 +77,39 @@ cp .env.example .env
 
 ---
 
+## Tests
+
+Tests use [pytest](https://pytest.org/) with [fakeredis](https://github.com/cunla/fakeredis-py) so no running Redis instance is required.
+
+### Install test dependencies
+
+```bash
+pip install pytest pytest-asyncio fakeredis
+```
+
+### Run
+
+```bash
+.venv/Scripts/pytest tests/ -v          # Windows
+.venv/bin/pytest     tests/ -v          # macOS / Linux
+```
+
+### Test file
+
+`tests/test_history_pipeline.py` covers the full data pipeline from Redis → API → UI-parseable response:
+
+| Test | What it verifies |
+|---|---|
+| `test_history_returns_most_recent_entries` | `/history?count=N` returns the N most recent stream entries, not the oldest |
+| `test_all_sensor_fields_survive_round_trip` | All 9 sensor fields stored in Redis are returned unchanged by the endpoint |
+| `test_warmup_zeros_are_present_not_null` | ENS160 warm-up values (`"0"` for AQI/CO2/VOC) come back as `"0"`, not absent — so the UI renders 0 rather than a gap |
+| `test_old_entries_missing_temperature_bmp580` | Entries written before `temperature_bmp580` was added don't crash the endpoint; the field is simply absent |
+| `test_bulk_readings_past_timestamps_do_not_crash` | Offline buffer sync with timestamps older than the stream tip returns a non-500 response (past IDs are skipped gracefully) |
+| `test_aggregation_marks_empty_window_as_missing` | Aggregator writes `missing=1` and empty strings for all fields when no raw data is available in the window |
+| `test_aggregation_with_data_sets_missing_zero` | Aggregator writes `missing=0` and numeric averages when raw data is present |
+
+---
+
 ## Local Development (no Docker)
 
 This runs the server directly on your machine using the `.venv` virtual environment. Redis still runs in Docker.

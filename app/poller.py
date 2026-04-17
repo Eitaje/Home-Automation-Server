@@ -8,6 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.config import settings
 from app.redis_client import get_redis
 from app.devices.nodemcu import NodeMCUDevice
+from app.aggregator import run_15min, run_1h, run_1d, run_1w
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +82,14 @@ def start_scheduler() -> None:
         max_instances=1,
         coalesce=True,
     )
+    _scheduler.add_job(run_15min, trigger="cron", minute="0,15,30,45",
+                       id="agg_15min", max_instances=1, coalesce=True)
+    _scheduler.add_job(run_1h,    trigger="cron", minute=0,
+                       id="agg_1h",    max_instances=1, coalesce=True)
+    _scheduler.add_job(run_1d,    trigger="cron", hour=0, minute=5,
+                       id="agg_1d",    max_instances=1, coalesce=True)
+    _scheduler.add_job(run_1w,    trigger="cron", day_of_week=0, hour=0, minute=10,
+                       id="agg_1w",    max_instances=1, coalesce=True)
     _scheduler.start()
     logger.info("Poller started — NodeMCU every %ds", settings.nodemcu_poll_interval)
 
